@@ -17,7 +17,7 @@ Pod::Spec.new do |spec|
   spec.source       = { :git => "https://git.cropsly.com/rahul.patra/InAppPurchaseKit", :tag => "#{spec.version}" }
 
   spec.frameworks = "CoreFoundation", "StoreKit"
-  spec.source_files  = "Classes/**/*.{swift,h,m}"
+  spec.source_files  = "Source/**/*.{swift,h,m}"
   
 end
 
