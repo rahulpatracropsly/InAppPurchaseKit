@@ -7,7 +7,6 @@ Pod::Spec.new do |spec|
   spec.name         = "InAppPurchaseKit"
   spec.version      = "0.0.1"
   spec.summary      = "A modern In-App Purchases management framework for iOS developers."
-  spec.requires_arc = true
 
   spec.homepage     = "https://git.cropsly.com/rahul.patra/InAppPurchaseKit"
   
