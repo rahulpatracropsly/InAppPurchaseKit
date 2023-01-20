@@ -4,7 +4,7 @@ Pod::Spec.new do |spec|
   spec.platform = :ios
   spec.ios.deployment_target = "13.0"
   spec.swift_version = "5.3"
-  spec.name         = "InAppPurchaseKit"
+  spec.name         = "RCInAppPurchaseKit"
   spec.version      = "0.0.1"
   spec.summary      = "A modern In-App Purchases management framework for iOS developers."
 
