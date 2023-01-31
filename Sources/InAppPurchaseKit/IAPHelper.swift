@@ -10,37 +10,48 @@ import StoreKit
 
 class IAPHelper: NSObject {
 
+    typealias IAPSuccessFailure = (Result<String?, IAPManagerError>) -> Void
+    
     static let shared = IAPHelper()
+    
+    private var currentSelctedProductIdType: ProductIdType?
+    private var onReceiveProductsHandler: IAPSuccessFailure?
 
     override init() {
         super.init()
-        print("IAPHelper initialized")
         SKPaymentQueue.default().add(self)
     }
 
-    func begin() {
-        print("IAPHelper begin initialized")
+    public func make(paymentFor productIdType: ProductIdType) {
+        currentSelctedProductIdType = productIdType
+        get(productIds: [productIdType.getProductId()])
+    }
+    
+    public func set(successFailure completion: IAPSuccessFailure?) {
+        onReceiveProductsHandler = completion
     }
 
-    func requestProductWithID(identifers: Set<String>) {
+    public func restorePurchases() {
         if SKPaymentQueue.canMakePayments() {
-            let request = SKProductsRequest(productIdentifiers:
-                identifers)
+            SKPaymentQueue.default().restoreCompletedTransactions()
+        } else {
+            onReceiveProductsHandler?(.failure(.custom("ERROR: restore purchase failed")))
+        }
+    }
+    
+    private func get(productIds ids: Set<String>) {
+        if SKPaymentQueue.canMakePayments() {
+            let request = SKProductsRequest(productIdentifiers: ids)
             request.delegate = self
             request.start()
         } else {
-            print("ERROR: product Not Available")
+            onReceiveProductsHandler?(.failure(.custom("ERROR: product Not Available")))
         }
     }
 
-    func buyProduct(product: SKProduct) {
-        print("Buying \(product.productIdentifier)...")
+    private func buy(product: SKProduct) {
         let payment = SKPayment(product: product)
         SKPaymentQueue.default().add(payment)
-    }
-
-    func restorePurchases() {
-        SKPaymentQueue.default().restoreCompletedTransactions()
     }
 }
 
@@ -50,24 +61,15 @@ extension IAPHelper: SKProductsRequestDelegate {
 
         let products = response.products as [SKProduct]
 
-        if (products.count > 0) {
-            for i in 0 ..< products.count {
-                let product = products[i]
-                print("Product Found: ",product.localizedTitle)
-            }
+        if let buyingProduct = products.filter({ $0.productIdentifier == self.currentSelctedProductIdType?.getProductId() ?? "" }).first {
+            buy(product: buyingProduct)
         } else {
-            print("No products found")
-        }
-
-        let productsInvalidIds = response.invalidProductIdentifiers
-
-        for product in productsInvalidIds {
-            print("Product not found: \(product)")
+            onReceiveProductsHandler?(.failure(.noProductsFound))
         }
     }
 
     func request(_ request: SKRequest, didFailWithError error: Error) {
-        print("Something went wrong: \(error.localizedDescription)")
+        onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
     }
 }
 
@@ -97,15 +99,20 @@ extension IAPHelper: SKPaymentTransactionObserver {
     }
 
     private func completeTransaction(transaction: SKPaymentTransaction) {
-        print("completeTransaction...")
-        deliverPurchaseForIdentifier(identifier: transaction.payment.productIdentifier)
         SKPaymentQueue.default().finishTransaction(transaction)
+        
+        let appStoreReceiptUrl = Bundle.main.appStoreReceiptURL
+        do {
+            let receiptData = try Data(contentsOf: appStoreReceiptUrl!)
+            let receiptString = receiptData.base64EncodedString(options: [])
+            onReceiveProductsHandler?(.success(receiptString))
+        } catch {
+            onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
+        }
     }
 
     private func restoreTransaction(transaction: SKPaymentTransaction) {
         guard let productIdentifier = transaction.original?.payment.productIdentifier else { return }
-        print("restoreTransaction... \(productIdentifier)")
-        deliverPurchaseForIdentifier(identifier: productIdentifier)
         SKPaymentQueue.default().finishTransaction(transaction)
     }
 
@@ -116,32 +123,27 @@ extension IAPHelper: SKPaymentTransactionObserver {
                 // handle all possible errors
                 switch (error.code) {
                 case SKError.unknown.rawValue:
-                    print("Unknown error")
-
+                    onReceiveProductsHandler?(.failure(.custom("Unknown error")))
+                    
                 case SKError.clientInvalid.rawValue:
-                    print("client is not allowed to issue the request")
+                    onReceiveProductsHandler?(.failure(.custom("client is not allowed to issue the request")))
 
                 case SKError.paymentCancelled.rawValue:
-                    print("user cancelled the request")
+                    onReceiveProductsHandler?(.failure(.paymentWasCancelled))
 
                 case SKError.paymentInvalid.rawValue:
-                    print("purchase identifier was invalid")
+                    onReceiveProductsHandler?(.failure(.custom("purchase identifier was invalid")))
 
                 case SKError.paymentNotAllowed.rawValue:
-                    print("this device is not allowed to make the payment")
+                    onReceiveProductsHandler?(.failure(.custom("this device is not allowed to make the payment")))
 
                 default:
+                    onReceiveProductsHandler?(.failure(.custom("default Unknown error")))
                     break;
                 }
             }
         }
-
         SKPaymentQueue.default().finishTransaction(transaction)
-    }
-
-    private func deliverPurchaseForIdentifier(identifier: String?) {
-        guard let identifier = identifier else { return }
-        print("identifier:- \(identifier)")
     }
 }
 
