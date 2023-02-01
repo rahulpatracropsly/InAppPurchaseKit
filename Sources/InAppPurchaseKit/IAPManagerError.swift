@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum IAPManagerError: Error {
+public enum IAPManagerError: Error {
     case custom(String)
     case noProductIDsFound
     case noProductsFound
@@ -16,7 +16,7 @@ enum IAPManagerError: Error {
 }
 
 extension IAPManagerError: LocalizedError {
-    var errorDescription: String? {
+     public var errorDescription: String? {
         switch self {
         case .noProductIDsFound: return "No In-App Purchase product identifiers were found."
         case .noProductsFound: return "No In-App Purchases were found."
@@ -27,3 +27,4 @@ extension IAPManagerError: LocalizedError {
         }
     }
 }
+

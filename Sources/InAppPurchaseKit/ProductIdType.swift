@@ -7,14 +7,14 @@
 
 import Foundation
 
-enum ProductIdType {
+public enum ProductIdType {
     
     case consumable(String)
     case nonConsumable(String)
     case autoRenewal(String)
     case nonAutoRenewal(String)
     
-    func getProductId() -> String {
+    public func getProductId() -> String {
         switch self {
         case .consumable(let key):
             return key

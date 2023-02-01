@@ -8,16 +8,15 @@
 import Foundation
 import StoreKit
 
-class IAPHelper: NSObject {
 
-    typealias IAPSuccessFailure = (Result<String?, IAPManagerError>) -> Void
-    
-    static let shared = IAPHelper()
+open class IAPHelper: NSObject {
+
+    public typealias IAPSuccessFailure = (Result<String?, IAPManagerError>) -> Void
     
     private var currentSelctedProductIdType: ProductIdType?
     private var onReceiveProductsHandler: IAPSuccessFailure?
 
-    override init() {
+    public override init() {
         super.init()
         SKPaymentQueue.default().add(self)
     }
@@ -57,7 +56,7 @@ class IAPHelper: NSObject {
 
 extension IAPHelper: SKProductsRequestDelegate {
 
-    func productsRequest(_ request: SKProductsRequest, didReceive response: SKProductsResponse) {
+    public func productsRequest(_ request: SKProductsRequest, didReceive response: SKProductsResponse) {
 
         let products = response.products as [SKProduct]
 
@@ -68,8 +67,19 @@ extension IAPHelper: SKProductsRequestDelegate {
         }
     }
 
-    func request(_ request: SKRequest, didFailWithError error: Error) {
+    public func request(_ request: SKRequest, didFailWithError error: Error) {
         onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
+    }
+    
+    func getReceipt() throws -> String? {
+        let appStoreReceiptUrl = Bundle.main.appStoreReceiptURL
+        do {
+            let receiptData = try Data(contentsOf: appStoreReceiptUrl!)
+            let receiptString = receiptData.base64EncodedString(options: [])
+            return receiptString
+        } catch {
+           throw error
+        }
     }
 }
 
@@ -100,11 +110,8 @@ extension IAPHelper: SKPaymentTransactionObserver {
 
     private func completeTransaction(transaction: SKPaymentTransaction) {
         SKPaymentQueue.default().finishTransaction(transaction)
-        
-        let appStoreReceiptUrl = Bundle.main.appStoreReceiptURL
         do {
-            let receiptData = try Data(contentsOf: appStoreReceiptUrl!)
-            let receiptString = receiptData.base64EncodedString(options: [])
+            let receiptString = try getReceipt()
             onReceiveProductsHandler?(.success(receiptString))
         } catch {
             onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
@@ -113,6 +120,12 @@ extension IAPHelper: SKPaymentTransactionObserver {
 
     private func restoreTransaction(transaction: SKPaymentTransaction) {
         SKPaymentQueue.default().finishTransaction(transaction)
+        do {
+            let receiptString = try getReceipt()
+            onReceiveProductsHandler?(.success(receiptString))
+        } catch {
+            onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
+        }
     }
 
     private func failedTransaction(transaction: SKPaymentTransaction) {
@@ -147,7 +160,7 @@ extension IAPHelper: SKPaymentTransactionObserver {
 }
 
 extension IAPHelper {
-    func paymentQueue(_ queue: SKPaymentQueue, shouldAddStorePayment payment: SKPayment, for product: SKProduct) -> Bool {
+    public func paymentQueue(_ queue: SKPaymentQueue, shouldAddStorePayment payment: SKPayment, for product: SKProduct) -> Bool {
         return true
     }
 }
