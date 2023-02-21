@@ -8,16 +8,27 @@
 import Foundation
 import StoreKit
 
-
 open class IAPHelper: NSObject {
 
     public typealias IAPSuccessFailure = (Result<String?, IAPManagerError>) -> Void
+    public typealias IAPShouldAddStorePayment = (SKPaymentQueue, SKPayment, SKProduct) -> Void
     
     private var currentSelctedProductIdType: ProductIdType?
     private var onReceiveProductsHandler: IAPSuccessFailure?
+    private var cachedPayment: SKPayment?
+    private var shouldAddStorePayment: Bool = false
+    private var onReceiveShouldAddStorePayment: IAPShouldAddStorePayment?
+    
+    var hasCachedPayments: Bool {
+        return cachedPayment != nil
+    }
 
     public override init() {
         super.init()
+        startObservingPaymentQueue()
+    }
+    
+    private func startObservingPaymentQueue() {
         SKPaymentQueue.default().add(self)
     }
 
@@ -51,6 +62,26 @@ open class IAPHelper: NSObject {
     private func buy(product: SKProduct) {
         let payment = SKPayment(product: product)
         SKPaymentQueue.default().add(payment)
+    }
+    
+    func handleCachedPayments() {
+        
+        guard let cachedPayment = cachedPayment else {
+            // We don't have any cached payments
+            return
+        }
+        
+        SKPaymentQueue.default().add(cachedPayment)
+        self.cachedPayment = nil
+    }
+    
+    func clearCachedPayments() {
+        cachedPayment = nil
+    }
+    
+    public func set(shouldAddStorePayment bool: Bool, shouldAddStorePaymentHandler: IAPShouldAddStorePayment? = nil) {
+        self.onReceiveShouldAddStorePayment = shouldAddStorePaymentHandler
+        self.shouldAddStorePayment = bool
     }
 }
 
@@ -98,9 +129,10 @@ extension IAPHelper: SKPaymentTransactionObserver {
                 restoreTransaction(transaction: transaction)
                 break
             case .deferred:
-                // TODO show user that is waiting for approval
+                deferredTransaction(transaction: transaction)
                 break
             case .purchasing:
+                purchasingTransaction(transaction: transaction)
                 break
             default:
                 break
@@ -157,10 +189,20 @@ extension IAPHelper: SKPaymentTransactionObserver {
         }
         SKPaymentQueue.default().finishTransaction(transaction)
     }
+    
+    private func purchasingTransaction(transaction: SKPaymentTransaction) {
+        onReceiveProductsHandler?(.failure(.custom("INFO! User is attempting to purchase product id: \(transaction.payment.productIdentifier)")))
+    }
+    
+    private func deferredTransaction(transaction: SKPaymentTransaction) {
+        onReceiveProductsHandler?(.failure(.custom("INFO! Purchase deferred for product id: \(transaction.payment.productIdentifier)")))
+    }
 }
 
 extension IAPHelper {
     public func paymentQueue(_ queue: SKPaymentQueue, shouldAddStorePayment payment: SKPayment, for product: SKProduct) -> Bool {
-        return true
+        cachedPayment = payment
+        self.onReceiveShouldAddStorePayment?(queue, payment, product)
+        return self.shouldAddStorePayment
     }
 }
