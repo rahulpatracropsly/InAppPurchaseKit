@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import StoreKit
 
 public enum IAPManagerError: Error {
     case custom(String)
@@ -23,6 +24,8 @@ extension IAPManagerError: LocalizedError {
         case .noProductsFound: return "No In-App Purchases were found."
         case .productRequestFailed: return "Unable to fetch available In-App Purchase products at the moment."
         case .paymentWasCancelled: return "In-App Purchase process was cancelled."
+        case .transactionError(let error):
+            return error.localizedDescription
         case .custom(let customError):
             return customError
         }
