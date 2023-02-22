@@ -11,8 +11,9 @@ public enum IAPManagerError: Error {
     case custom(String)
     case noProductIDsFound
     case noProductsFound
-    case paymentWasCancelled
+    case paymentWasCancelled(String, SKPaymentQueue, Error)
     case productRequestFailed
+    case transactionError(Error)
 }
 
 extension IAPManagerError: LocalizedError {

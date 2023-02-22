@@ -5,7 +5,7 @@ Pod::Spec.new do |spec|
   spec.ios.deployment_target = "11.0"
   spec.swift_version = "5.3"
   spec.name         = "RCInAppPurchaseKit"
-  spec.version      = "0.2.1"
+  spec.version      = "0.2.2"
   spec.summary      = "A modern In-App Purchases management framework for iOS developers."
 
   spec.homepage     = "https://git.cropsly.com/rahul.patra/InAppPurchaseKit"

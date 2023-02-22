@@ -12,17 +12,20 @@ open class IAPHelper: NSObject {
 
     public typealias IAPSuccessFailure = (Result<String?, IAPManagerError>) -> Void
     public typealias IAPShouldAddStorePayment = (SKPaymentQueue, SKPayment, SKProduct) -> Void
-    
+    public typealias IAPRestoreTransactionStatusCompletion = (Result<SKPaymentQueue, Error>) -> Void
+     
     private var currentSelctedProductIdType: ProductIdType?
     private var onReceiveProductsHandler: IAPSuccessFailure?
     private var cachedPayment: SKPayment?
     private var shouldAddStorePayment: Bool = false
     private var onReceiveShouldAddStorePayment: IAPShouldAddStorePayment?
+    private var onReceiveRestoreTransactionStatusCompletion: IAPRestoreTransactionStatusCompletion?
     
-    var hasCachedPayments: Bool {
+    private var mainProducts: [SKProduct] = []
+    public var hasCachedPayments: Bool {
         return cachedPayment != nil
     }
-
+    
     public override init() {
         super.init()
         startObservingPaymentQueue()
@@ -31,10 +34,25 @@ open class IAPHelper: NSObject {
     private func startObservingPaymentQueue() {
         SKPaymentQueue.default().add(self)
     }
+    
+    public func handleCachedPayments() {
+        guard let cachedPayment = cachedPayment else {
+            // We don't have any cached payments
+            return
+        }
+        SKPaymentQueue.default().add(cachedPayment)
+        self.cachedPayment = nil
+    }
+        
+    public func clearCachedPayments() {
+        cachedPayment = nil
+    }
 
     public func make(paymentFor productIdType: ProductIdType) {
         currentSelctedProductIdType = productIdType
-        get(productIds: [productIdType.getProductId()])
+        if let product = self.mainProducts.filter({ $0.productIdentifier == productIdType.getProductId() }).first {
+            buy(product: product)
+        }
     }
     
     public func set(successFailure completion: IAPSuccessFailure?) {
@@ -49,7 +67,10 @@ open class IAPHelper: NSObject {
         }
     }
     
-    private func get(productIds ids: Set<String>) {
+    /**
+        call it before using make payment for function
+     */
+    public func get(productIds ids: Set<String>) {
         if SKPaymentQueue.canMakePayments() {
             let request = SKProductsRequest(productIdentifiers: ids)
             request.delegate = self
@@ -59,24 +80,9 @@ open class IAPHelper: NSObject {
         }
     }
 
-    private func buy(product: SKProduct) {
+    public func buy(product: SKProduct) {
         let payment = SKPayment(product: product)
         SKPaymentQueue.default().add(payment)
-    }
-    
-    func handleCachedPayments() {
-        
-        guard let cachedPayment = cachedPayment else {
-            // We don't have any cached payments
-            return
-        }
-        
-        SKPaymentQueue.default().add(cachedPayment)
-        self.cachedPayment = nil
-    }
-    
-    func clearCachedPayments() {
-        cachedPayment = nil
     }
     
     public func set(shouldAddStorePayment bool: Bool, shouldAddStorePaymentHandler: IAPShouldAddStorePayment? = nil) {
@@ -88,18 +94,12 @@ open class IAPHelper: NSObject {
 extension IAPHelper: SKProductsRequestDelegate {
 
     public func productsRequest(_ request: SKProductsRequest, didReceive response: SKProductsResponse) {
-
         let products = response.products as [SKProduct]
-
-        if let buyingProduct = products.filter({ $0.productIdentifier == self.currentSelctedProductIdType?.getProductId() ?? "" }).first {
-            buy(product: buyingProduct)
-        } else {
-            onReceiveProductsHandler?(.failure(.noProductsFound))
-        }
+        self.mainProducts = products
     }
 
     public func request(_ request: SKRequest, didFailWithError error: Error) {
-        onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
+        onReceiveProductsHandler?(.failure(.custom("ERROR! Failed to load purchasable products with error: \(error.localizedDescription)")))
     }
     
     func getReceipt() throws -> String? {
@@ -120,28 +120,40 @@ extension IAPHelper: SKPaymentTransactionObserver {
         for transaction in transactions {
             switch (transaction.transactionState) {
             case .purchased:
-                completeTransaction(transaction: transaction)
+                // Transaction is in queue, user has been charged. Client should complete the transaction.
+                completeTransaction(for: transaction, in: queue)
                 break
             case .failed:
-                failedTransaction(transaction: transaction)
+                // Transaction was cancelled or failed before being added to the server queue.
+                failedTransaction(for: transaction, in: queue)
                 break
             case .restored:
-                restoreTransaction(transaction: transaction)
+                // INFO! Restore case is handled in `SKPaymentTransactionObserver` methods
                 break
             case .deferred:
-                deferredTransaction(transaction: transaction)
+                // The transaction is in the queue, but its final status is pending external action.
+                deferredTransaction(for: transaction, in: queue)
                 break
             case .purchasing:
-                purchasingTransaction(transaction: transaction)
+                // Transaction is being added to the server queue.
+                purchasingTransaction(for: transaction, in: queue)
                 break
             default:
                 break
             }
         }
     }
+    
+    public func paymentQueue(_ queue: SKPaymentQueue, restoreCompletedTransactionsFailedWithError error: Error) {
+        onReceiveRestoreTransactionStatusCompletion?(.failure(error))
+    }
+    
+    public func paymentQueueRestoreCompletedTransactionsFinished(_ queue: SKPaymentQueue) {
+        onReceiveRestoreTransactionStatusCompletion?(.success(queue))
+    }
 
-    private func completeTransaction(transaction: SKPaymentTransaction) {
-        SKPaymentQueue.default().finishTransaction(transaction)
+    private func completeTransaction(for transaction: SKPaymentTransaction, in queue: SKPaymentQueue) {
+        queue.finishTransaction(transaction)
         do {
             let receiptString = try getReceipt()
             onReceiveProductsHandler?(.success(receiptString))
@@ -150,51 +162,25 @@ extension IAPHelper: SKPaymentTransactionObserver {
         }
     }
 
-    private func restoreTransaction(transaction: SKPaymentTransaction) {
-        SKPaymentQueue.default().finishTransaction(transaction)
-        do {
-            let receiptString = try getReceipt()
-            onReceiveProductsHandler?(.success(receiptString))
-        } catch {
-            onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
-        }
-    }
-
-    private func failedTransaction(transaction: SKPaymentTransaction) {
-
+    private func failedTransaction(for transaction: SKPaymentTransaction, in queue: SKPaymentQueue) {
         if let error = transaction.error as NSError? {
             if error.domain == SKErrorDomain {
-                // handle all possible errors
                 switch (error.code) {
-                case SKError.unknown.rawValue:
-                    onReceiveProductsHandler?(.failure(.custom("Unknown error")))
-                    
-                case SKError.clientInvalid.rawValue:
-                    onReceiveProductsHandler?(.failure(.custom("client is not allowed to issue the request")))
-
                 case SKError.paymentCancelled.rawValue:
-                    onReceiveProductsHandler?(.failure(.paymentWasCancelled))
-
-                case SKError.paymentInvalid.rawValue:
-                    onReceiveProductsHandler?(.failure(.custom("purchase identifier was invalid")))
-
-                case SKError.paymentNotAllowed.rawValue:
-                    onReceiveProductsHandler?(.failure(.custom("this device is not allowed to make the payment")))
-
+                    onReceiveProductsHandler?(.failure(.paymentWasCancelled(transaction.payment.productIdentifier, queue, error)))
                 default:
-                    onReceiveProductsHandler?(.failure(.custom("default Unknown error")))
+                    onReceiveProductsHandler?(.failure(.transactionError(error)))
                     break;
                 }
             }
         }
-        SKPaymentQueue.default().finishTransaction(transaction)
     }
     
-    private func purchasingTransaction(transaction: SKPaymentTransaction) {
+    private func purchasingTransaction(for transaction: SKPaymentTransaction, in queue: SKPaymentQueue) {
         onReceiveProductsHandler?(.failure(.custom("INFO! User is attempting to purchase product id: \(transaction.payment.productIdentifier)")))
     }
     
-    private func deferredTransaction(transaction: SKPaymentTransaction) {
+    private func deferredTransaction(for transaction: SKPaymentTransaction, in queue: SKPaymentQueue) {
         onReceiveProductsHandler?(.failure(.custom("INFO! Purchase deferred for product id: \(transaction.payment.productIdentifier)")))
     }
 }
