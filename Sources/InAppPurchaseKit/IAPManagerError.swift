@@ -12,9 +12,9 @@ public enum IAPManagerError: Error {
     case custom(String)
     case noProductIDsFound
     case noProductsFound
-    case paymentWasCancelled(String, SKPaymentQueue, Error)
+    case transactionFailed(SKPaymentTransaction, SKPaymentQueue)
     case productRequestFailed
-    case transactionError(Error)
+    case didFailWithError(Error)
 }
 
 extension IAPManagerError: LocalizedError {
@@ -23,9 +23,9 @@ extension IAPManagerError: LocalizedError {
         case .noProductIDsFound: return "No In-App Purchase product identifiers were found."
         case .noProductsFound: return "No In-App Purchases were found."
         case .productRequestFailed: return "Unable to fetch available In-App Purchase products at the moment."
-        case .paymentWasCancelled: return "In-App Purchase process was cancelled."
-        case .transactionError(let error):
-            return error.localizedDescription
+        case .transactionFailed: return "In-App Purchase process was failed."
+        case .didFailWithError(let error):
+            return "ERROR! Failed to load purchasable products with error: \(error.localizedDescription)"
         case .custom(let customError):
             return customError
         }

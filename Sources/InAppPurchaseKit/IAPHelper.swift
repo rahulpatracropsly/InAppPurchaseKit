@@ -10,7 +10,7 @@ import StoreKit
 
 open class IAPHelper: NSObject {
 
-    public typealias IAPSuccessFailure = (Result<String?, IAPManagerError>) -> Void
+    public typealias IAPSuccessFailure = (Result<(receipt: String?, transaction: SKPaymentTransaction, queue: SKPaymentQueue), IAPManagerError>) -> Void
     public typealias IAPShouldAddStorePayment = (SKPaymentQueue, SKPayment, SKProduct) -> Void
     public typealias IAPRestoreTransactionStatusCompletion = (Result<SKPaymentQueue, Error>) -> Void
      
@@ -20,10 +20,14 @@ open class IAPHelper: NSObject {
     private var shouldAddStorePayment: Bool = false
     private var onReceiveShouldAddStorePayment: IAPShouldAddStorePayment?
     private var onReceiveRestoreTransactionStatusCompletion: IAPRestoreTransactionStatusCompletion?
-    
     private var mainProducts: [SKProduct] = []
+
     public var hasCachedPayments: Bool {
         return cachedPayment != nil
+    }
+    
+    public var hasProducts: Bool {
+        return mainProducts.count > 0
     }
     
     public override init() {
@@ -52,6 +56,8 @@ open class IAPHelper: NSObject {
         currentSelctedProductIdType = productIdType
         if let product = self.mainProducts.filter({ $0.productIdentifier == productIdType.getProductId() }).first {
             buy(product: product)
+        } else {
+            onReceiveProductsHandler?(.failure(.custom("ERROR! Could not found a product with id: \(productIdType.getProductId())")))
         }
     }
     
@@ -89,6 +95,10 @@ open class IAPHelper: NSObject {
         self.onReceiveShouldAddStorePayment = shouldAddStorePaymentHandler
         self.shouldAddStorePayment = bool
     }
+    
+    public func set(restoreTransactionStatusCompletion: IAPRestoreTransactionStatusCompletion? = nil) {
+        self.onReceiveRestoreTransactionStatusCompletion = restoreTransactionStatusCompletion
+    }
 }
 
 extension IAPHelper: SKProductsRequestDelegate {
@@ -99,7 +109,7 @@ extension IAPHelper: SKProductsRequestDelegate {
     }
 
     public func request(_ request: SKRequest, didFailWithError error: Error) {
-        onReceiveProductsHandler?(.failure(.custom("ERROR! Failed to load purchasable products with error: \(error.localizedDescription)")))
+        onReceiveProductsHandler?(.failure(.didFailWithError(error)))
     }
     
     func getReceipt() throws -> String? {
@@ -156,24 +166,14 @@ extension IAPHelper: SKPaymentTransactionObserver {
         queue.finishTransaction(transaction)
         do {
             let receiptString = try getReceipt()
-            onReceiveProductsHandler?(.success(receiptString))
+            onReceiveProductsHandler?(.success((receipt: receiptString, transaction: transaction, queue: queue)))
         } catch {
             onReceiveProductsHandler?(.failure(.custom(error.localizedDescription)))
         }
     }
 
     private func failedTransaction(for transaction: SKPaymentTransaction, in queue: SKPaymentQueue) {
-        if let error = transaction.error as NSError? {
-            if error.domain == SKErrorDomain {
-                switch (error.code) {
-                case SKError.paymentCancelled.rawValue:
-                    onReceiveProductsHandler?(.failure(.paymentWasCancelled(transaction.payment.productIdentifier, queue, error)))
-                default:
-                    onReceiveProductsHandler?(.failure(.transactionError(error)))
-                    break;
-                }
-            }
-        }
+        onReceiveProductsHandler?(.failure(.transactionFailed(transaction, queue)))
     }
     
     private func purchasingTransaction(for transaction: SKPaymentTransaction, in queue: SKPaymentQueue) {
