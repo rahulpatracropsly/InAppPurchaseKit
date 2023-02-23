@@ -13,6 +13,7 @@ open class IAPHelper: NSObject {
     public typealias IAPSuccessFailure = (Result<(receipt: String?, transaction: SKPaymentTransaction, queue: SKPaymentQueue), IAPManagerError>) -> Void
     public typealias IAPShouldAddStorePayment = (SKPaymentQueue, SKPayment, SKProduct) -> Void
     public typealias IAPRestoreTransactionStatusCompletion = (Result<SKPaymentQueue, Error>) -> Void
+    public typealias IAPDidReceiveProductCompletion = ([SKProduct]) -> Void
      
     private var currentSelctedProductIdType: ProductIdType?
     private var onReceiveProductsHandler: IAPSuccessFailure?
@@ -20,6 +21,7 @@ open class IAPHelper: NSObject {
     private var shouldAddStorePayment: Bool = false
     private var onReceiveShouldAddStorePayment: IAPShouldAddStorePayment?
     private var onReceiveRestoreTransactionStatusCompletion: IAPRestoreTransactionStatusCompletion?
+    private var onReceiveProductRequestCompletion: IAPDidReceiveProductCompletion?
     private var mainProducts: [SKProduct] = []
 
     public var hasCachedPayments: Bool {
@@ -99,6 +101,16 @@ open class IAPHelper: NSObject {
     public func set(restoreTransactionStatusCompletion: IAPRestoreTransactionStatusCompletion? = nil) {
         self.onReceiveRestoreTransactionStatusCompletion = restoreTransactionStatusCompletion
     }
+    
+    public func set(didReceiveCompletion: IAPDidReceiveProductCompletion? = nil) {
+        self.onReceiveProductRequestCompletion = didReceiveCompletion
+    }
+    
+    public func finish(transactionList: [SKPaymentTransaction], inQueue queue: SKPaymentQueue) {
+        for transaction in transactionList {
+            queue.finishTransaction(transaction)
+        }
+    }
 }
 
 extension IAPHelper: SKProductsRequestDelegate {
@@ -106,6 +118,7 @@ extension IAPHelper: SKProductsRequestDelegate {
     public func productsRequest(_ request: SKProductsRequest, didReceive response: SKProductsResponse) {
         let products = response.products as [SKProduct]
         self.mainProducts = products
+        self.onReceiveProductRequestCompletion?(products)
     }
 
     public func request(_ request: SKRequest, didFailWithError error: Error) {
